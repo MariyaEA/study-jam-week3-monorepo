@@ -112,7 +112,7 @@ This project uses **two dedicated service accounts** — one for the build pipel
 1. Go to **IAM & Admin > Service Accounts**
 2. Click **+ Create Service Account**
 3. Fill in:
-   - **Name:** `studyjam-build-sa`
+   - **Name:** `studyjam-cloudbuild-sa`
    - **Description:** Cloud Build pipeline service account
 4. Click **Create and Continue**
 5. Grant these roles:
