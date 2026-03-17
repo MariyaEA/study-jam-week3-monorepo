@@ -20,6 +20,7 @@ substitutions:
   _REPO_NAME: studyjam-repo
   _BACKEND_SERVICE: studyjam-backend
   _FRONTEND_SERVICE: studyjam-frontend
+  _VPC_CONNECTOR: vpc-studyjam-connector
 
 steps:
   # ── Step 1: Build backend Docker image ───────────────────────────────────────
@@ -63,6 +64,8 @@ steps:
       - '--set-env-vars=NODE_ENV=production,DB_HOST=${_DB_HOST},DB_PORT=5432,DB_NAME=${_DB_NAME},DB_USER=${_DB_USER}'
       - '--set-secrets=DB_PASSWORD=${_DB_PASSWORD_NAME}:latest,JWT_SECRET=${_JWT_SECRET_NAME}:latest'
       - '--service-account=studyjam-cloudrun-sa@$PROJECT_ID.iam.gserviceaccount.com'
+      - '--vpc-connector=projects/$PROJECT_ID/locations/${_REGION}/connectors/${_VPC_CONNECTOR}'
+      - '--vpc-egress=private-ranges-only'
 
   # ── Step 4: Health check backend before deploying frontend ───────────────────
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
