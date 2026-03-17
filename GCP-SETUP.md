@@ -175,7 +175,7 @@ If any roles are missing, click the pencil icon on the row and add them.
    | Variable | Value |
    |----------|-------|
    | `_REGION` | `africa-south1` |
-   | `_REPO_NAME` | `study-jam-week3-monorepo` |
+   | `_REPO_NAME` | `studyjam-repo` |
    | `_BACKEND_SERVICE` | `studyjam-backend` |
    | `_FRONTEND_SERVICE` | `studyjam-frontend` |
    | `_DB_HOST` | *(Cloud SQL private IP — see SQL instance page)* | 10.74.0.3
@@ -188,37 +188,83 @@ If any roles are missing, click the pencil icon on the row and add them.
 
 ---
 
-## Step 8 — Run Database Migrations
+## Step 8 — Trigger First Deployment
 
-After the first deployment, run migrations manually:
+> **Do this before running migrations.** The database tables don't exist yet — migrations create them.
 
-1. Go to **Cloud Run > studyjam-backend**
-2. Click **Edit & Deploy New Revision**
-3. Override the command temporarily to: `node dist/database/migrate.js`
-4. Deploy, then revert the command back to the default
+1. Push a commit to the **`gcp/dev`** branch of your GitHub repository (this is the branch the trigger watches, **not** `main`):
+   ```bash
+   git checkout -b gcp/dev   # if the branch doesn't exist yet
+   git push origin gcp/dev
+   ```
+2. Go to **Cloud Build > History** and click the running build to watch the logs
+3. Wait for **all 8 build steps** to complete successfully (takes ~5–10 minutes):
 
-> **Alternatively**, you can run migrations from your local machine using Cloud SQL Auth Proxy:
-> ```bash
-> ./cloud-sql-proxy dvt-lab-devfest-2025:africa-south1:studyjam-db &
-> cd backend
-> cp .env.example .env   # fill in DB_HOST=127.0.0.1 and credentials
-> npm run db:migrate
-> ```
+   | # | Cloud Build Step | What it does |
+   |---|-----------------|--------------|
+   | 1 | `build-backend` | Builds the backend Docker image |
+   | 2 | `push-backend` | Pushes the image to Artifact Registry |
+   | 3 | `deploy-backend` | Deploys `studyjam-backend` to Cloud Run |
+   | 4 | `health-check-backend` | Polls `/health` up to 10 times — confirms backend is live |
+   | 5 | `get-backend-url` | Reads the backend URL for injection into the frontend build |
+   | 6 | `build-frontend` | Builds the frontend image with `VITE_API_URL` baked in |
+   | 7 | `push-frontend` | Pushes the frontend image to Artifact Registry |
+   | 8 | `deploy-frontend` | Deploys `studyjam-frontend` to Cloud Run |
+
+4. When the build goes green, both services are live but **the database is empty** — proceed to Step 9.
 
 ---
 
-## Step 9 — Trigger First Deployment
+## Step 9 — Run Database Migrations
 
-1. Push a commit to the `main` branch of your GitHub repository
-2. Go to **Cloud Build > History** to monitor the build
-3. Build steps:
-   - Build backend image
-   - Push backend to Artifact Registry
-   - Deploy backend to Cloud Run
-   - Health check backend (`/health` endpoint)
-   - Build frontend image (with backend URL injected)
-   - Push frontend to Artifact Registry
-   - Deploy frontend to Cloud Run
+> Migrations must run **after** Step 8 completes. They create the tables in Cloud SQL that the backend expects.
+
+### Recommended: Cloud SQL Auth Proxy (run from your local machine)
+
+This is the simplest and safest approach — no need to touch the running Cloud Run service.
+
+1. [Download Cloud SQL Auth Proxy](https://cloud.google.com/sql/docs/postgres/connect-auth-proxy#install) for your OS and place it in your project root.
+2. Start the proxy (it creates a local tunnel to Cloud SQL on port 5432):
+   ```bash
+   ./cloud-sql-proxy dvt-lab-devfest-2025:africa-south1:studyjam-db &
+   ```
+3. Set up your local backend `.env`:
+   ```bash
+   cd backend
+   cp .env.example .env
+   ```
+   Edit `.env` with:
+   ```
+   DB_HOST=127.0.0.1
+   DB_PORT=5432
+   DB_NAME=studyjam
+   DB_USER=studyjam_user
+   DB_PASSWORD=<the password from Secret Manager>
+   ```
+4. Run migrations:
+   ```bash
+   npm run db:migrate
+   ```
+5. Stop the proxy when done: `kill %1` (or find its PID with `jobs -l`)
+
+---
+
+### Alternative: Cloud Run Command Override
+
+Use this only if you cannot run migrations locally. This temporarily redeploys the backend with a different startup command.
+
+> **Warning:** This deploys a new revision that runs the migration script instead of the normal API server. Cloud Run may flag it as unhealthy because the process exits after migration completes. You **must** redeploy again afterwards to restore normal operation.
+
+1. Go to **Cloud Run > studyjam-backend**
+2. Click **Edit & Deploy New Revision**
+3. Under the **Container** tab, find **Container command** and set it to:
+   ```
+   node dist/database/migrate.js
+   ```
+   (Leave all other settings — env vars, secrets, service account — unchanged)
+4. Click **Deploy** and watch the logs in **Logs** tab — wait for the migration output to confirm success
+5. Once migrations complete, click **Edit & Deploy New Revision** again and **clear** the Container command field (leave it blank to restore the default `npm start` entrypoint from the Dockerfile)
+6. Click **Deploy** again to bring the normal API server back online
 
 ---
 
@@ -236,7 +282,7 @@ After deployment completes:
 ## Deployment Architecture
 
 ```
-GitHub Push (main)
+GitHub Push (gcp/dev)
        │
        ▼
  GCP Cloud Build
