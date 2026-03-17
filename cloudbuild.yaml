@@ -72,13 +72,13 @@ steps:
     args:
       - '-c'
       - |
-        BACKEND_URL=$(gcloud run services describe ${_BACKEND_SERVICE} \
+        BACKEND_URL=$$(gcloud run services describe ${_BACKEND_SERVICE} \
           --region=${_REGION} --format='value(status.url)')
-        echo "Backend URL: $BACKEND_URL"
-        for i in $(seq 1 10); do
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$BACKEND_URL/health")
-          echo "Health check attempt $i - HTTP $STATUS"
-          if [ "$STATUS" = "200" ]; then
+        echo "Backend URL: $$BACKEND_URL"
+        for i in $$(seq 1 10); do
+          STATUS=$$(curl -s -o /dev/null -w "%{http_code}" "$$BACKEND_URL/health")
+          echo "Health check attempt $$i - HTTP $$STATUS"
+          if [ "$$STATUS" = "200" ]; then
             echo "Backend health check passed!"
             exit 0
           fi
@@ -95,10 +95,10 @@ steps:
     args:
       - '-c'
       - |
-        BACKEND_URL=$(gcloud run services describe ${_BACKEND_SERVICE} \
+        BACKEND_URL=$$(gcloud run services describe ${_BACKEND_SERVICE} \
           --region=${_REGION} --format='value(status.url)')
-        echo "$BACKEND_URL/api" > /workspace/backend_url.txt
-        echo "Backend API URL: $BACKEND_URL/api"
+        echo "$$BACKEND_URL/api" > /workspace/backend_url.txt
+        echo "Backend API URL: $$BACKEND_URL/api"
 
   - name: 'gcr.io/cloud-builders/docker'
     id: 'build-frontend'
@@ -107,9 +107,9 @@ steps:
     args:
       - '-c'
       - |
-        BACKEND_API_URL=$(cat /workspace/backend_url.txt)
+        BACKEND_API_URL=$$(cat /workspace/backend_url.txt)
         docker build \
-          --build-arg VITE_API_URL="$BACKEND_API_URL" \
+          --build-arg VITE_API_URL="$$BACKEND_API_URL" \
           -t ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO_NAME}/${_FRONTEND_SERVICE}:$COMMIT_SHA \
           -t ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO_NAME}/${_FRONTEND_SERVICE}:latest \
           ./frontend
