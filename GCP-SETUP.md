@@ -10,7 +10,7 @@
 
 ## Prerequisites
 
-- A Google Cloud account with billing enabled
+- A Google Cloud account with billing enabled (free $300)
 - Owner or Editor role on the project
 - GitHub repository connected to GCP (see Step 0)
 
@@ -26,7 +26,7 @@
 
 ---
 
-## Step 1 — Enable Required APIs
+## Step 1 — Enable Required APIs (If Brand new cloud account + project)
 
 Go to **APIs & Services > Library** and enable:
 
@@ -60,16 +60,16 @@ Go to **APIs & Services > Library** and enable:
 ## Step 3 — Create Cloud SQL (PostgreSQL) Instance
 
 1. Go to **SQL > Create Instance**
-2. Select **PostgreSQL**
+2. Select **PostgreSQL (Sandbox)**
 3. Fill in:
    - **Instance ID:** `studyjam-db`
    - **Password:** *(set a strong password — save it for Secret Manager)*
    - **Database version:** PostgreSQL 15
    - **Region:** `africa-south1`
    - **Zone:** Single zone (for cost savings)
-4. Under **Machine type:** Choose `db-f1-micro` (for dev/testing)
+4. Under **Machine type:** Choose `db-f1-micro` (for dev/testing is the cheapest!)
 5. Under **Connections:**
-   - Enable **Private IP** (VPC: default)
+   - Enable **Private IP** (VPC: default) - 10.74.0.3
    - Disable Public IP (for security)
 6. Click **Create Instance** *(takes ~5 minutes)*
 
@@ -177,13 +177,14 @@ If any roles are missing, click the pencil icon on the row and add them.
    | `_REPO_NAME` | `study-jam-week3-monorepo` |
    | `_BACKEND_SERVICE` | `studyjam-backend` |
    | `_FRONTEND_SERVICE` | `studyjam-frontend` |
-   | `_DB_HOST` | *(Cloud SQL private IP — see SQL instance page)* |
+   | `_DB_HOST` | *(Cloud SQL private IP — see SQL instance page)* | 10.74.0.3
    | `_DB_NAME` | `studyjam` |
    | `_DB_USER` | `studyjam_user` |
    | `_DB_PASSWORD_NAME` | `studyjam-db-password` |
    | `_JWT_SECRET_NAME` | `studyjam-jwt-secret` |
+   
 
-5. Click **Create**
+5. Click **Create**, then run
 
 ---
 
