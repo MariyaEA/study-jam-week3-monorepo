@@ -38,6 +38,7 @@ Go to **APIs & Services > Library** and enable:
 | Cloud SQL Admin API | Managed PostgreSQL |
 | Secret Manager API | Secure secrets storage |
 | Cloud Resource Manager API | Project management |
+| Serverless VPC Access API | VPC connector for Cloud Run → Cloud SQL |
 
 **How to enable:** Search for each API name → Click **Enable**
 
@@ -67,11 +68,12 @@ Go to **APIs & Services > Library** and enable:
    - **Database version:** PostgreSQL 15
    - **Region:** `africa-south1`
    - **Zone:** Single zone (for cost savings)
-4. Under **Machine type:** Choose `db-f1-micro` (for dev/testing is the cheapest!)
+4. Under **Machine type:** Choose `db-f1-micro` (cheapest for dev/testing)
 5. Under **Connections:**
-   - Enable **Private IP** (VPC: default) - 10.74.0.3
+   - Enable **Private IP** (VPC: default)
    - Disable Public IP (for security)
 6. Click **Create Instance** *(takes ~5 minutes)*
+7. Once created, note the **Private IP address** (e.g. `10.74.0.3`) — you'll need it in Step 7
 
 ### Create the Database
 
@@ -85,13 +87,31 @@ Go to **APIs & Services > Library** and enable:
 
 ---
 
-## Step 4 — Store Secrets in Secret Manager
+## Step 4 — Create Serverless VPC Access Connector
+
+> **Why this is required:** Cloud SQL is configured with a **private IP only** (no public IP). Cloud Run cannot reach private IPs without a VPC connector. Without this, every database query will silently time out after ~127 seconds.
+
+1. Go to **VPC network > Serverless VPC Access**
+2. Click **+ Create Connector**
+3. Fill in:
+   - **Name:** `vpc-studyjam-connector`
+   - **Region:** `africa-south1`
+   - **Network:** `default`
+   - **Subnet:** Custom IP range
+   - **IP range:** `10.8.0.0/28` *(must be an unused /28 range — this does not conflict with Cloud SQL's 10.74.x.x range)*
+4. Click **Create** *(takes ~1–2 minutes)*
+
+> **Verify:** The connector status should show **Ready** (green tick) before proceeding.
+
+---
+
+## Step 5 — Store Secrets in Secret Manager
 
 1. Go to **Secret Manager > Create Secret**
 
 ### Secret 1: DB Password
 - **Name:** `studyjam-db-password`
-- **Secret value:** *(the DB password you set above)*
+- **Secret value:** *(the DB password you set in Step 3)*
 - Click **Create Secret**
 
 ### Secret 2: JWT Secret
@@ -103,11 +123,11 @@ Go to **APIs & Services > Library** and enable:
 
 ---
 
-## Step 5 — Create Service Accounts
+## Step 6 — Create Service Accounts
 
 This project uses **two dedicated service accounts** — one for the build pipeline, one for the running app. Using dedicated accounts follows least-privilege best practices.
 
-### 5a — Cloud Build Service Account (runs the CI/CD pipeline)
+### 6a — Cloud Build Service Account (runs the CI/CD pipeline)
 
 1. Go to **IAM & Admin > Service Accounts**
 2. Click **+ Create Service Account**
@@ -124,7 +144,7 @@ This project uses **two dedicated service accounts** — one for the build pipel
    - `Storage Object Viewer`
 6. Click **Done**
 
-### 5b — Cloud Run Service Account (runs the deployed app)
+### 6b — Cloud Run Service Account (runs the deployed app)
 
 1. Click **+ Create Service Account** again
 2. Fill in:
@@ -138,37 +158,38 @@ This project uses **two dedicated service accounts** — one for the build pipel
 
 ---
 
-## Step 6 — Verify Service Account Roles in IAM
+## Step 7 — Verify Service Account Roles in IAM
 
-Confirm both service accounts created in Step 5 appear in IAM with the correct roles.
+Confirm both service accounts created in Step 6 appear in IAM with the correct roles.
 
 1. Go to **IAM & Admin > IAM**
 2. Filter by `studyjam` — you should see both accounts:
 
    | Service Account | Roles |
    |----------------|-------|
-   | `studyjam-build-sa@dvt-lab-devfest-2025.iam.gserviceaccount.com` | Cloud Run Admin, Artifact Registry Writer, Service Account User, Secret Manager Secret Accessor, Logs Writer, Storage Object Viewer |
-   | `studyjam-cloudrun-sa@dvt-lab-devfest-2025.iam.gserviceaccount.com` | Cloud SQL Client, Secret Manager Secret Accessor |
+   | `studyjam-cloudbuild-sa@...` | Cloud Run Admin, Artifact Registry Writer, Service Account User, Secret Manager Secret Accessor, Logs Writer, Storage Object Viewer |
+   | `studyjam-cloudrun-sa@...` | Cloud SQL Client, Secret Manager Secret Accessor |
 
 If any roles are missing, click the pencil icon on the row and add them.
 
+---
 
-## Step 7 — Create Cloud Build Trigger
+## Step 8 — Create Cloud Build Trigger
 
 1. Go to **Cloud Build > Triggers**
 2. Click **+ Create Trigger**
 3. Fill in:
    - **Name:** `studyjam-deploy`
    - **Event:** Push to a branch
-   - **Repository:** `kevin-naicker-dvt/study-jam-week3-monorepo` (if not listed, click "Connect new repository" and authenticate with GitHub)
-   - **Branch:** `^gcp/dev$` — this is our GCP build branch, do not use main
+   - **Repository:** `kevin-naicker-dvt/study-jam-week3-monorepo`
+   - **Branch:** `^gcp/dev$` — this is the GCP build branch, **not** `main`
    - **Configuration:** Cloud Build configuration file (YAML)
    - **File location:** `cloudbuild.yaml`
-   - **Service account:** Select `studyjam-build-sa@dvt-lab-devfest-2025.iam.gserviceaccount.com` (the dedicated build SA created in Step 5a)
+   - **Service account:** Select `studyjam-cloudbuild-sa@dvt-lab-devfest-2025.iam.gserviceaccount.com`
 
-   > **Note:** There are two service accounts in this project — do not confuse them:
-   > - `studyjam-build-sa` → selected here, **runs the CI/CD build pipeline**
-   > - `studyjam-cloudrun-sa` → **runs the deployed app** on Cloud Run (already set in `cloudbuild.yaml`, no action needed here)
+   > **Note:** There are two service accounts — do not confuse them:
+   > - `studyjam-cloudbuild-sa` → selected here, **runs the CI/CD build pipeline**
+   > - `studyjam-cloudrun-sa` → **runs the deployed app** on Cloud Run (already set in `cloudbuild.yaml`)
 
 4. Under **Substitution variables**, add:
 
@@ -178,104 +199,102 @@ If any roles are missing, click the pencil icon on the row and add them.
    | `_REPO_NAME` | `studyjam-repo` |
    | `_BACKEND_SERVICE` | `studyjam-backend` |
    | `_FRONTEND_SERVICE` | `studyjam-frontend` |
-   | `_DB_HOST` | *(Cloud SQL private IP — see SQL instance page)* | 10.74.0.3
+   | `_DB_HOST` | *(Cloud SQL private IP from Step 3, e.g. `10.74.0.3`)* |
    | `_DB_NAME` | `studyjam` |
    | `_DB_USER` | `studyjam_user` |
    | `_DB_PASSWORD_NAME` | `studyjam-db-password` |
    | `_JWT_SECRET_NAME` | `studyjam-jwt-secret` |
-   
-5. Click **Create**, then run
+   | `_VPC_CONNECTOR` | `vpc-studyjam-connector` |
+
+5. Click **Create**
 
 ---
 
-## Step 8 — Trigger First Deployment
+## Step 9 — Trigger First Deployment
 
 > **Do this before running migrations.** The database tables don't exist yet — migrations create them.
 
-1. Push a commit to the **`gcp/dev`** branch of your GitHub repository (this is the branch the trigger watches, **not** `main`):
+1. Push a commit to the **`gcp/dev`** branch:
    ```bash
    git checkout -b gcp/dev   # if the branch doesn't exist yet
    git push origin gcp/dev
    ```
 2. Go to **Cloud Build > History** and click the running build to watch the logs
-3. Wait for **all 8 build steps** to complete successfully (takes ~5–10 minutes):
+3. Wait for **all build steps** to complete successfully (takes ~5–10 minutes):
 
    | # | Cloud Build Step | What it does |
    |---|-----------------|--------------|
-   | 1 | `build-backend` | Builds the backend Docker image |
+   | 1 | `build-backend` | Builds the backend Docker image (includes compiled `migrate.js` and `drizzle/` SQL files) |
    | 2 | `push-backend` | Pushes the image to Artifact Registry |
-   | 3 | `deploy-backend` | Deploys `studyjam-backend` to Cloud Run |
+   | 3 | `deploy-backend` | Deploys `studyjam-backend` to Cloud Run with VPC connector attached |
    | 4 | `health-check-backend` | Polls `/health` up to 10 times — confirms backend is live |
    | 5 | `get-backend-url` | Reads the backend URL for injection into the frontend build |
    | 6 | `build-frontend` | Builds the frontend image with `VITE_API_URL` baked in |
    | 7 | `push-frontend` | Pushes the frontend image to Artifact Registry |
    | 8 | `deploy-frontend` | Deploys `studyjam-frontend` to Cloud Run |
 
-4. When the build goes green, both services are live but **the database is empty** — proceed to Step 9.
+4. When the build goes green, both services are live but **the database tables are empty** — proceed to Step 10.
 
 ---
 
-## Step 9 — Run Database Migrations
+## Step 10 — Run Database Migrations
 
-> Migrations must run **after** Step 8 completes. They create the tables in Cloud SQL that the backend expects.
+> Migrations must run **after** Step 9 completes. They create the `users` table (and any future tables) in Cloud SQL.
 
-### Recommended: Cloud SQL Auth Proxy (run from your local machine)
+The migration runner (`dist/database/migrate.js`) is compiled into the Docker image during the build. Use the **Cloud Run command override** to execute it against the live database.
 
-This is the simplest and safest approach — no need to touch the running Cloud Run service.
+> **Important:** The VPC connector from Step 4 must be active. Without it, the migration process will time out trying to reach Cloud SQL.
 
-1. [Download Cloud SQL Auth Proxy](https://cloud.google.com/sql/docs/postgres/connect-auth-proxy#install) for your OS and place it in your project root.
-2. Start the proxy (it creates a local tunnel to Cloud SQL on port 5432):
-   ```bash
-   ./cloud-sql-proxy dvt-lab-devfest-2025:africa-south1:studyjam-db &
-   ```
-3. Set up your local backend `.env`:
-   ```bash
-   cd backend
-   cp .env.example .env
-   ```
-   Edit `.env` with:
-   ```
-   DB_HOST=127.0.0.1
-   DB_PORT=5432
-   DB_NAME=studyjam
-   DB_USER=studyjam_user
-   DB_PASSWORD=<the password from Secret Manager>
-   ```
-4. Run migrations:
-   ```bash
-   npm run db:migrate
-   ```
-5. Stop the proxy when done: `kill %1` (or find its PID with `jobs -l`)
-
----
-
-### Alternative: Cloud Run Command Override
-
-Use this only if you cannot run migrations locally. This temporarily redeploys the backend with a different startup command.
-
-> **Warning:** This deploys a new revision that runs the migration script instead of the normal API server. Cloud Run may flag it as unhealthy because the process exits after migration completes. You **must** redeploy again afterwards to restore normal operation.
+### How to run migrations
 
 1. Go to **Cloud Run > studyjam-backend**
 2. Click **Edit & Deploy New Revision**
-3. Under the **Container** tab, find **Container command** and set it to:
+3. Under the **Container** tab, set **two separate fields**:
+
+   | Field | Value |
+   |-------|-------|
+   | **Container command** | `node` |
+   | **Container arguments** | `dist/database/migrate.js` |
+
+   > **Common mistake:** Do NOT put `node dist/database/migrate.js` as a single string in the Container command field. Cloud Run treats the entire string as a binary path, causing a `no such file or directory` error. The command (`node`) and argument (`dist/database/migrate.js`) must be in their respective fields.
+
+4. Leave all other settings unchanged (env vars, secrets, service account, VPC connector)
+5. Click **Deploy**
+6. Go to the **Logs** tab and wait for:
    ```
-   node dist/database/migrate.js
+   Running migrations...
+   Migrations complete.
    ```
-   (Leave all other settings — env vars, secrets, service account — unchanged)
-4. Click **Deploy** and watch the logs in **Logs** tab — wait for the migration output to confirm success
-5. Once migrations complete, click **Edit & Deploy New Revision** again and **clear** the Container command field (leave it blank to restore the default `npm start` entrypoint from the Dockerfile)
-6. Click **Deploy** again to bring the normal API server back online
+7. Once you see `Migrations complete.`, click **Edit & Deploy New Revision** again
+8. **Clear both fields** (Container command and Container arguments)
+9. Click **Deploy** to restore normal API server operation
+
+### Verify migrations ran
+
+After restoring normal operation, confirm the `users` table exists via **Cloud SQL Studio**:
+
+1. Go to **Cloud SQL > studyjam-db > Cloud SQL Studio**
+2. Connect to the `studyjam` database
+3. Run:
+   ```sql
+   SELECT * FROM drizzle_migrations;
+   ```
+   You should see one row confirming the migration ran.
+4. Optionally confirm the table structure:
+   ```sql
+   SELECT table_name FROM information_schema.tables WHERE table_schema = 'public';
+   ```
 
 ---
 
-## Step 10 — Access Your App
+## Step 11 — Access Your App
 
-After deployment completes:
+After deployment and migrations complete:
 
 1. Go to **Cloud Run**
-2. Click `studyjam-backend` → copy the URL (e.g. `https://studyjam-backend-xxxxx-uc.a.run.app`)
+2. Click `studyjam-backend` → copy the URL (e.g. `https://studyjam-backend-xxxxx-bq.a.run.app`)
 3. Click `studyjam-frontend` → copy the URL
-4. Open the frontend URL in your browser
+4. Open the frontend URL in your browser and test register/login
 
 ---
 
@@ -288,6 +307,7 @@ GitHub Push (gcp/dev)
  GCP Cloud Build
        │
        ├─► Build Backend Docker Image
+       │   (includes compiled migrate.js + drizzle/ SQL files)
        │         │
        │         ▼
        │   Artifact Registry
@@ -295,7 +315,11 @@ GitHub Push (gcp/dev)
        │         │
        │         ▼
        │   Cloud Run: studyjam-backend
-       │   (Health Check: /health)
+       │   (VPC Connector attached)
+       │         │
+       │         ▼ (via VPC Connector)
+       │   Cloud SQL: PostgreSQL
+       │   (Private IP only — 10.74.0.x)
        │
        ├─► Build Frontend Docker Image
        │   (VITE_API_URL injected from backend URL)
@@ -311,7 +335,7 @@ GitHub Push (gcp/dev)
                  │ API calls
                  ▼
        Cloud Run: Backend API
-                 │
+                 │ (via VPC Connector)
                  ▼
        Cloud SQL: PostgreSQL
        (africa-south1)
@@ -328,6 +352,7 @@ GitHub Push (gcp/dev)
 | Cloud SQL | db-f1-micro | ~$10-15 |
 | Artifact Registry | <1GB storage | ~$0-1 |
 | Cloud Build | 120 free mins/day | ~$0 |
+| Serverless VPC Access | per GB transferred | ~$0-1 |
 
 > **Note:** Costs scale with usage. Cloud Run scales to zero when not in use.
 
@@ -338,7 +363,11 @@ GitHub Push (gcp/dev)
 | Issue | Solution |
 |-------|----------|
 | Build fails at push step | Check Artifact Registry permissions for Cloud Build SA |
-| Backend fails health check | Check Cloud SQL IP in `_DB_HOST` variable |
+| Backend fails health check | Check `_DB_HOST` variable matches Cloud SQL private IP |
 | Frontend shows API errors | Verify `VITE_API_URL` in Cloud Run env vars |
 | 403 Forbidden on Cloud Run | Ensure `--allow-unauthenticated` flag is set |
-| DB connection refused | Check Cloud SQL Client role on service account |
+| DB connection refused | Check `Cloud SQL Client` role on `studyjam-cloudrun-sa` |
+| Register/login returns 500 after 127s | VPC connector missing or not attached — verify Step 4 and `_VPC_CONNECTOR` in trigger variables |
+| Migration fails: `no such file or directory` | Wrong command format — put `node` in **command** field and `dist/database/migrate.js` in **args** field separately |
+| Migration fails: `Running migrations` but no `Migrations complete` | Check Cloud SQL is reachable — VPC connector must be **Ready** and attached to the revision |
+| `COPY failed: stat app/drizzle` | The `drizzle/` folder was not present during Docker build — `npm run db:generate` runs automatically in the Dockerfile, check build logs |
