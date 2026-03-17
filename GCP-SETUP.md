@@ -169,6 +169,7 @@ If any roles are missing, click the pencil icon on the row and add them.
    > **Note:** There are two service accounts in this project — do not confuse them:
    > - `studyjam-build-sa` → selected here, **runs the CI/CD build pipeline**
    > - `studyjam-cloudrun-sa` → **runs the deployed app** on Cloud Run (already set in `cloudbuild.yaml`, no action needed here)
+
 4. Under **Substitution variables**, add:
 
    | Variable | Value |
@@ -183,7 +184,6 @@ If any roles are missing, click the pencil icon on the row and add them.
    | `_DB_PASSWORD_NAME` | `studyjam-db-password` |
    | `_JWT_SECRET_NAME` | `studyjam-jwt-secret` |
    
-
 5. Click **Create**, then run
 
 ---
