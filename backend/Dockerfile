@@ -4,6 +4,8 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci
 COPY . .
+# Generate drizzle migration files from schema (no DB connection needed)
+RUN npm run db:generate
 RUN npm run build
 # Compile migrate.ts separately (standalone script, not in nest build module graph)
 RUN node_modules/.bin/tsc --module commonjs --target ES2021 --moduleResolution node \
