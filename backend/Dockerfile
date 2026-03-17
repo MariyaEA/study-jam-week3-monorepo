@@ -5,6 +5,9 @@ COPY package*.json ./
 RUN npm ci
 COPY . .
 RUN npm run build
+# Compile migrate.ts separately (standalone script, not in nest build module graph)
+RUN node_modules/.bin/tsc --module commonjs --target ES2021 --moduleResolution node \
+    --esModuleInterop --skipLibCheck --outDir dist --rootDir src src/database/migrate.ts
 
 # Production stage
 FROM node:18-alpine AS production
@@ -16,6 +19,8 @@ COPY package*.json ./
 RUN npm ci --only=production && npm cache clean --force
 
 COPY --from=builder /app/dist ./dist
+# Copy drizzle migration SQL files needed at runtime
+COPY --from=builder /app/drizzle ./drizzle
 
 EXPOSE 3000
 
