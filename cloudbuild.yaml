@@ -64,8 +64,8 @@ steps:
       - '--set-env-vars=NODE_ENV=production,DB_HOST=${_DB_HOST},DB_PORT=5432,DB_NAME=${_DB_NAME},DB_USER=${_DB_USER}'
       - '--set-secrets=DB_PASSWORD=${_DB_PASSWORD_NAME}:latest,JWT_SECRET=${_JWT_SECRET_NAME}:latest'
       - '--service-account=studyjam-cloudrun-sa@$PROJECT_ID.iam.gserviceaccount.com'
-      - '--vpc-connector=projects/$PROJECT_ID/locations/${_REGION}/connectors/${_VPC_CONNECTOR}'
-      - '--vpc-egress=private-ranges-only'
+      # - '--vpc-connector=projects/$PROJECT_ID/locations/${_REGION}/connectors/${_VPC_CONNECTOR}'
+      # - '--vpc-egress=private-ranges-only'
 
   # ── Step 4: Health check backend before deploying frontend ───────────────────
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
